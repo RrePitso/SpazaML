@@ -1,4 +1,3 @@
-
 # spaza_dashboard.py
 
 import streamlit as st
@@ -156,7 +155,7 @@ if page_selection == "📈 Demand Forecasting":
                     labels={'ds': 'Date', 'yhat': 'Predicted Quantity Sold'}
                 )
                 fig.add_scatter(x=model.history['ds'], y=model.history['y'], mode='markers', name='Actual Sales',
-                                marker=dict(size=4, opacity=0.6))
+                                 marker=dict(size=4, opacity=0.6))
                 fig.update_layout(hovermode="x unified", legend_title_text="Legend")
                 st.plotly_chart(fig, use_container_width=True)
 
@@ -166,7 +165,7 @@ if page_selection == "📈 Demand Forecasting":
                 future_forecast['ds'] = future_forecast['ds'].dt.date # Display date only
                 st.dataframe(future_forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
                              .rename(columns={'ds': 'Date', 'yhat': 'Predicted Sales',
-                                              'yhat_lower': 'Lower Bound', 'yhat_upper': 'Upper Bound'})
+                                               'yhat_lower': 'Lower Bound', 'yhat_upper': 'Upper Bound'})
                              .set_index('Date')
                 )
                 st.info(
@@ -247,7 +246,7 @@ elif page_selection == "🤝 Bulk Buying Advantage":
     with col1:
         st.markdown("#### Scenario A: Individual Ordering")
         st.image("https://via.placeholder.com/300x150?text=Shop+A+Order+-+Expensive", caption="Spaza Shop A Orders Individually")
-        st.image("https://via.placeholder.com="https://via.placeholder.com/300x150?text=Shop+B+Order+-+Expensive", caption="Spaza Shop B Orders Individually")
+        st.image("https://via.placeholder.com/300x150?text=Shop+B+Order+-+Expensive", caption="Spaza Shop B Orders Individually") # FIX WAS HERE
         st.markdown("""
         * Each shop orders small quantities.
         * **Wholesaler Price:** R100 per bag of Maize Meal.
