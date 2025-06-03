@@ -70,6 +70,14 @@ def train_prophet_model(df_sales, selected_product_name): # Renamed selected_cat
     # Prepare data for Prophet
     prophet_df = product_df_filled.rename(columns={'invoice_date': 'ds', 'quantity': 'y'})
 
+    # --- NEW: Check for sufficient data for Prophet to fit ---
+    # Prophet needs at least 2 non-NaN rows. More practically, it needs
+    # at least 2 non-zero values, or sufficient variation to detect a trend.
+    # We'll check if there are at least 2 unique non-zero sales days.
+    if prophet_df['y'].count() < 2 or prophet_df[prophet_df['y'] > 0].shape[0] < 2:
+        st.warning(f"Not enough historical sales data for '{selected_product_name}' to generate a reliable forecast. Please select a product with more sales history.")
+        return None, None
+
     # Get SA holidays (for demonstration of capability)
     # Adjust years based on your dataset's date range and current year
     # Data is from Jan 2024, so include 2024 and 2025 for future forecast
@@ -173,7 +181,8 @@ if page_selection == "📈 Demand Forecasting":
                     "The `Lower Bound` and `Upper Bound` give you a range of possible sales."
                 )
             else:
-                st.warning(f"No sufficient data to generate forecast for '{selected_product}'. Please select another product.")
+                # This 'else' block will now be triggered if train_prophet_model returns None, None
+                st.warning(f"No forecast could be generated for '{selected_product}'. It might not have enough sales history or needs more data.")
     else:
         st.info("Please select a product to view its demand forecast.")
 
