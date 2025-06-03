@@ -1,3 +1,4 @@
+
 # spaza_dashboard.py
 
 import streamlit as st
@@ -18,10 +19,12 @@ warnings.filterwarnings("ignore", category=DeprecationWarning, module="kagglehub
 def load_and_preprocess_data():
     """Loads the dataset and performs initial preprocessing."""
     try:
-        file_path = "Different_stores_data_V2.csv"
+        # --- IMPORTANT CHANGE: New file path ---
+        file_path = "point_of_sale_dataset.csv"
+        # --- IMPORTANT CHANGE: New dataset identifier ---
         df = kagglehub.load_dataset(
             KaggleDatasetAdapter.PANDAS,
-            "kzmontage/sales-from-different-stores",
+            "smmmmmmmmmmmm/point-of-sales", # This matches the dataset you downloaded
             file_path,
         )
         st.success("Dataset loaded successfully!")
@@ -29,42 +32,51 @@ def load_and_preprocess_data():
         st.error(f"Error loading dataset: {e}")
         st.stop() # Stop the app if data can't be loaded
 
-    df['invoice_date'] = pd.to_datetime(df['invoice_date'], format='%m/%d/%Y %H:%M')
+    # --- IMPORTANT CHANGE: New date column name and format ---
+    df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d') # Assuming YYYY-MM-DD format from your output
 
-    # Aggregate to daily sales per category
-    daily_category_sales = df.groupby([df['invoice_date'].dt.date, 'category'])['quantity'].sum().reset_index()
-    daily_category_sales['invoice_date'] = pd.to_datetime(daily_category_sales['invoice_date'])
+    # Aggregate to daily sales per Product_Name (instead of category)
+    # --- IMPORTANT CHANGE: Group by 'Date' and 'Product_Name' ---
+    daily_product_sales = df.groupby([df['Date'].dt.date, 'Product_Name'])['Quantity'].sum().reset_index()
+    daily_product_sales['Date'] = pd.to_datetime(daily_product_sales['Date']) # Convert back to datetime for Prophet
 
-    return daily_category_sales
+    # Rename columns to match expected for Prophet's 'category' equivalent
+    daily_product_sales = daily_product_sales.rename(columns={'Date': 'invoice_date', 'Product_Name': 'category', 'Quantity': 'quantity'})
+
+    return daily_product_sales
 
 # --- 2. Prophet Model Training (Cached for performance) ---
 @st.cache_resource # Cache the trained model
-def train_prophet_model(df_sales, selected_category):
-    """Trains a Prophet model for a given category."""
-    category_df = df_sales[df_sales['category'] == selected_category].copy()
+def train_prophet_model(df_sales, selected_product_name): # Renamed selected_category to selected_product_name for clarity
+    """Trains a Prophet model for a given product name."""
+    # --- IMPORTANT CHANGE: Filter by 'category' (which is now Product_Name) ---
+    product_df = df_sales[df_sales['category'] == selected_product_name].copy()
 
-    if category_df.empty:
-        return None, None # No data for this category
+    if product_df.empty:
+        return None, None # No data for this product
 
     # Ensure all dates are present in the time series (fill missing with 0)
-    start_date = category_df['invoice_date'].min()
-    end_date = category_df['invoice_date'].max()
+    start_date = product_df['invoice_date'].min()
+    end_date = product_df['invoice_date'].max()
     full_date_range = pd.date_range(start=start_date, end=end_date, freq='D')
 
-    full_category_df = pd.DataFrame({'invoice_date': full_date_range})
-    full_category_df['category'] = selected_category
+    full_product_df = pd.DataFrame({'invoice_date': full_date_range})
+    # --- IMPORTANT CHANGE: Set 'category' column to selected_product_name ---
+    full_product_df['category'] = selected_product_name
 
-    category_df_filled = pd.merge(full_category_df, category_df, on=['invoice_date', 'category'], how='left')
-    category_df_filled['quantity'] = category_df_filled['quantity'].fillna(0)
+    # --- IMPORTANT CHANGE: Merge on 'invoice_date' and 'category' (Product_Name) ---
+    product_df_filled = pd.merge(full_product_df, product_df, on=['invoice_date', 'category'], how='left')
+    product_df_filled['quantity'] = product_df_filled['quantity'].fillna(0)
 
     # Prepare data for Prophet
-    prophet_df = category_df_filled.rename(columns={'invoice_date': 'ds', 'quantity': 'y'})
+    prophet_df = product_df_filled.rename(columns={'invoice_date': 'ds', 'quantity': 'y'})
 
     # Get SA holidays (for demonstration of capability)
     # Adjust years based on your dataset's date range and current year
+    # Data is from Jan 2024, so include 2024 and 2025 for future forecast
     sa_holidays = holidays.country_holidays(
         'ZA',
-        years=range(prophet_df['ds'].min().year, prophet_df['ds'].max().year + 2) # Include years for future forecast
+        years=range(prophet_df['ds'].min().year, prophet_df['ds'].max().year + 2)
     )
     sa_holidays_df = pd.DataFrame({
         'holiday': 'ZA_Holiday',
@@ -74,7 +86,7 @@ def train_prophet_model(df_sales, selected_category):
     })
 
     model = Prophet(
-        yearly_seasonality=True,
+        yearly_seasonality=True, # May not be strong with only 20 days of data
         weekly_seasonality=True,
         daily_seasonality=False,
         holidays=sa_holidays_df
@@ -106,38 +118,41 @@ page_selection = st.sidebar.radio(
 )
 
 # Load data once at the start of the app run
-daily_category_sales_df = load_and_preprocess_data()
-available_categories = sorted(daily_category_sales_df['category'].unique().tolist())
+daily_product_sales_df = load_and_preprocess_data()
+# --- IMPORTANT CHANGE: Use 'category' column, which is now Product_Name ---
+available_products = sorted(daily_product_sales_df['category'].unique().tolist())
 
 # --- Page 1: Demand Forecasting ---
 if page_selection == "📈 Demand Forecasting":
     st.header("Predicting What Your Customers Will Buy")
     st.write(
         "Never run out of popular items or have too much unsold stock. "
-        "This tool predicts how much of each product category you'll sell in the coming weeks."
+        "This tool predicts how much of each product you'll sell in the coming weeks."
     )
 
     st.markdown("---")
 
-    selected_category = st.selectbox(
-        "Select a Product Category to Forecast:",
-        available_categories,
-        index=available_categories.index('Food & Beverage') if 'Food & Beverage' in available_categories else 0
+    # --- IMPORTANT CHANGE: Select a Product (not category) ---
+    selected_product = st.selectbox(
+        "Select a Product to Forecast:",
+        available_products,
+        index=0 # Default to the first product
     )
 
-    if selected_category:
-        with st.spinner(f"Generating forecast for {selected_category}..."):
-            model, forecast_df = train_prophet_model(daily_category_sales_df, selected_category)
+    if selected_product:
+        with st.spinner(f"Generating forecast for {selected_product}..."):
+            # --- IMPORTANT CHANGE: Pass selected_product to the model training function ---
+            model, forecast_df = train_prophet_model(daily_product_sales_df, selected_product)
 
             if model and forecast_df is not None:
-                st.subheader(f"Sales Forecast for '{selected_category}'")
+                st.subheader(f"Sales Forecast for '{selected_product}'")
 
                 # Plotting with Plotly for interactivity
                 fig = px.line(
                     forecast_df,
                     x='ds',
                     y='yhat',
-                    title=f'Predicted Daily Sales for {selected_category}',
+                    title=f'Predicted Daily Sales for {selected_product}',
                     labels={'ds': 'Date', 'yhat': 'Predicted Quantity Sold'}
                 )
                 fig.add_scatter(x=model.history['ds'], y=model.history['y'], mode='markers', name='Actual Sales',
@@ -147,7 +162,7 @@ if page_selection == "📈 Demand Forecasting":
 
                 st.markdown("#### Forecasted Quantities for the Next 30 Days:")
                 # Filter forecast to show only future dates
-                future_forecast = forecast_df[forecast_df['ds'] > daily_category_sales_df['invoice_date'].max()].copy()
+                future_forecast = forecast_df[forecast_df['ds'] > daily_product_sales_df['invoice_date'].max()].copy()
                 future_forecast['ds'] = future_forecast['ds'].dt.date # Display date only
                 st.dataframe(future_forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
                              .rename(columns={'ds': 'Date', 'yhat': 'Predicted Sales',
@@ -159,9 +174,9 @@ if page_selection == "📈 Demand Forecasting":
                     "The `Lower Bound` and `Upper Bound` give you a range of possible sales."
                 )
             else:
-                st.warning(f"No sufficient data to generate forecast for '{selected_category}'. Please select another category.")
+                st.warning(f"No sufficient data to generate forecast for '{selected_product}'. Please select another product.")
     else:
-        st.info("Please select a category to view its demand forecast.")
+        st.info("Please select a product to view its demand forecast.")
 
 
 # --- Page 2: Inventory Management (Simulated) ---
@@ -180,12 +195,15 @@ elif page_selection == "📦 Inventory Management":
         "With your actual sales data, we can give you precise, real-time alerts."
     )
 
-    # Simulate some product data and apply reorder logic based on a hypothetical forecast
+    # --- IMPORTANT CHANGE: Use Product names from the new dataset or common grocery items ---
+    # We'll use a mix of product names from your new dataset for better demo relevance
+    # Your new dataset has 'Product_1', 'Product_2', etc. Let's make it more realistic.
+    # Replace these with actual common grocery items for a better demo
     simulated_products_data = {
-        'Product': ['Cooking Oil 2L', 'Maize Meal 10kg', 'Soap Bar', 'Soft Drink 330ml', 'Bread Loaf'],
-        'Current Stock (Units)': [50, 10, 100, 150, 5],
-        'Daily Predicted Sales': [3, 2, 5, 10, 4], # Hypothetical daily forecast from the model
-        'Reorder Threshold (Days of Sales)': [7, 5, 10, 7, 2] # Example threshold
+        'Product': ['Milk 1L', 'White Bread', 'Cola 330ml Can', 'Chips (Large)', 'Bottled Water 500ml'],
+        'Current Stock (Units)': [50, 10, 100, 150, 75],
+        'Daily Predicted Sales': [30, 25, 40, 35, 20], # Adjusted to be higher to reflect real shop sales
+        'Reorder Threshold (Days of Sales)': [2, 1, 3, 2, 4] # Example threshold
     }
     simulated_df = pd.DataFrame(simulated_products_data)
 
@@ -229,7 +247,7 @@ elif page_selection == "🤝 Bulk Buying Advantage":
     with col1:
         st.markdown("#### Scenario A: Individual Ordering")
         st.image("https://via.placeholder.com/300x150?text=Shop+A+Order+-+Expensive", caption="Spaza Shop A Orders Individually")
-        st.image("https://via.placeholder.com/300x150?text=Shop+B+Order+-+Expensive", caption="Spaza Shop B Orders Individually")
+        st.image("https://via.placeholder.com="https://via.placeholder.com/300x150?text=Shop+B+Order+-+Expensive", caption="Spaza Shop B Orders Individually")
         st.markdown("""
         * Each shop orders small quantities.
         * **Wholesaler Price:** R100 per bag of Maize Meal.
